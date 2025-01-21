@@ -31,7 +31,8 @@ const INDEX_INDEX_FINGER_TIP = 8;
 
 
 export default function App() {
-  const { isOpen, onOpen, onOpenChange } = useDisclosure();
+  const modalAbout = useDisclosure();
+  const modalInstructions = useDisclosure();
 
   const webcamRef = useRef<Webcam>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -224,26 +225,55 @@ export default function App() {
           </Button>
         )}
         <Button
-          onPress={onOpen}
+          onPress={modalAbout.onOpen}
           className={"fixed top-2 right-2 z-50"}
           color="primary"
           variant="shadow"
         >
           About
         </Button>
-        <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
+        <Modal isOpen={modalAbout.isOpen} onOpenChange={modalAbout.onOpenChange}>
           <ModalContent className={"bg-[#100a43]"}>
             <ModalHeader className="flex flex-col gap-1">About</ModalHeader>
             <ModalBody>
               <h1>Virtual Theremin</h1>
               <p>
-                My new app to detect hand gestures and create music from those gestures.
+                A Virtual Theremin app powered by Google&apos;s mediapipe AI hand detection model.
               </p>
               <p>
+                For more, check out my personal website:
                 <Link href="https://www.anuragshenoy.in/">
-                  My personal website
+                  https://www.anuragshenoy.in/
                 </Link>
               </p>
+              <br></br>
+            </ModalBody>
+          </ModalContent>
+        </Modal>
+        <Button
+          onPress={modalInstructions.onOpen}
+          className={"fixed top-2 z-50 bg-white"}
+          variant="shadow"
+        >
+          Instructions
+        </Button>
+        <Modal isOpen={modalInstructions.isOpen} size={"lg"} onOpenChange={modalInstructions.onOpenChange}>
+          <ModalContent className={"bg-[#100a43]"}>
+            <ModalHeader className="flex flex-col gap-1">Instructions</ModalHeader>
+            <ModalBody>
+              <p>
+                To start detection of hands, click on &quot;Detect&quot;.
+              </p>
+              <p>
+                Pinching your Index Finger and Thumb together activates the Theremin.
+              </p>
+              <p>
+                Frequency varies from LOW to HIGH pitch from LEFT to RIGHT.
+              </p>
+              <p>
+                Gain / Volume varies from LOW to HIGH from BOTTOM to TOP.
+              </p>
+              <br></br>
             </ModalBody>
           </ModalContent>
         </Modal>
