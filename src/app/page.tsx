@@ -20,17 +20,14 @@ import {
   GestureRecognizer,
   NormalizedLandmark,
   DrawingUtils,
-  HandLandmarkerResult
 } from "@mediapipe/tasks-vision";
-import * as cam from '@mediapipe/camera_utils';
-import { g } from "framer-motion/client";
 
 const WIDTH = 1280;
 const HEIGHT = 720;
 const INDEX_THUMB_TIP = 4;
 const INDEX_INDEX_FINGER_TIP = 8;
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 
 export default function App() {
@@ -61,6 +58,7 @@ export default function App() {
         runningMode: "VIDEO",
       }
     );
+    setCanvasSize([WIDTH, HEIGHT]);
     setRecognizer(gestureRecognizer);
   }
 
@@ -155,8 +153,8 @@ export default function App() {
   const calcFrequency = (
     landmarks: NormalizedLandmark[]
   ) => {
-    var minFrequency = 10;
-    var maxFrequency = 2500;
+    const minFrequency = 10;
+    const maxFrequency = 2500;
     const thumbTip = landmarks[INDEX_THUMB_TIP];
     return ((thumbTip.x) * maxFrequency) + minFrequency;
   };
@@ -164,8 +162,8 @@ export default function App() {
   const calcGain = (
     landmarks: NormalizedLandmark[]
   ) => {
-    var minGain = 0;
-    var maxGain = 1;
+    const minGain = 0;
+    const maxGain = 1;
     const thumbTip = landmarks[INDEX_THUMB_TIP];
     return 1 - ((thumbTip.y) * maxGain) + minGain;
   };
@@ -176,11 +174,11 @@ export default function App() {
   ) => {
     console.log("Frequency:", frequency, "Gain:", gain * 100);
     // create the context and oscillator
-    var context = new AudioContext();
-    var oscillator = context.createOscillator();
+    const context = new AudioContext();
+    const oscillator = context.createOscillator();
     oscillator.connect(context.destination);
     // create gain node and connect to the destination (audio output device / speakers)
-    var gainNode = context.createGain();
+    const gainNode = context.createGain();
     oscillator.connect(gainNode);
     gainNode.connect(context.destination);
 
