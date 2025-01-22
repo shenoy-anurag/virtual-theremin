@@ -9,6 +9,7 @@ import {
   useDisclosure,
   Button,
   Link,
+  Alert,
   Modal,
   ModalHeader,
   ModalBody,
@@ -17,7 +18,7 @@ import {
 
 import {
   FilesetResolver,
-  GestureRecognizer,
+  HandLandmarker,
   NormalizedLandmark,
   DrawingUtils,
 } from "@mediapipe/tasks-vision";
@@ -38,34 +39,53 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Recognize variable from the mediapipe task-vision library
-  const [recognizer, setRecognizer] = useState<GestureRecognizer>();
+  // const [recognizer, setRecognizer] = useState<GestureRecognizer>();
+  const [landmarker, setLandmarker] = useState<HandLandmarker>();
   const [canvasSize, setCanvasSize] = useState([0, 0]);
+  const [isVisibleAlert, setIsVisibleAlert] = useState(true);
   // const [oscillator, setOscillator] = useState<>(null);
+
+  const alert = {
+    description: "This app works best in Firefox. Performs poorly in Google Chrome and Edge. Currently working on it.",
+    title: "Works best in Firefox",
+  };
 
   async function loadRecognizer() {
     const vision = await FilesetResolver.forVisionTasks(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
     );
 
-    const gestureRecognizer = await GestureRecognizer.createFromOptions(
+    // const gestureRecognizer = await GestureRecognizer.createFromOptions(
+    //   vision,
+    //   {
+    //     baseOptions: {
+    //       modelAssetPath:
+    //         "https://storage.googleapis.com/mediapipe-tasks/gesture_recognizer/gesture_recognizer.task",
+    //       delegate: "GPU",
+    //     },
+    //     numHands: 1,
+    //     runningMode: "VIDEO",
+    //   }
+    // );
+    const handLandmarker = await HandLandmarker.createFromOptions(
       vision,
       {
         baseOptions: {
           modelAssetPath:
-            "https://storage.googleapis.com/mediapipe-tasks/gesture_recognizer/gesture_recognizer.task",
+            "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
           delegate: "GPU",
         },
-        numHands: 1,
+        numHands: 2,
         runningMode: "VIDEO",
       }
     );
     setCanvasSize([WIDTH, HEIGHT]);
-    setRecognizer(gestureRecognizer);
+    setLandmarker(handLandmarker);
   }
 
   function renderLoop() {
     if (
-      !recognizer ||
+      !landmarker ||
       !webcamRef.current ||
       !webcamRef.current.video ||
       !webcamRef.current ||
@@ -88,10 +108,11 @@ export default function App() {
     canvasEl.height = HEIGHT;
 
     // Get prediction results from the MediaPipe hand for the current video frame.
-    const result = recognizer.recognizeForVideo(
-      webcamRef.current.video,
-      Date.now()
-    );
+    // const result = landmarker.recognizeForVideo(
+    //   webcamRef.current.video,
+    //   Date.now()
+    // );
+    const result = landmarker.detectForVideo(webcamRef.current.video, Date.now())
     if (result.landmarks) {
       const width = canvasEl.width;
       const height = canvasEl.height;
@@ -126,7 +147,7 @@ export default function App() {
   ) => {
     const drawingUtils = new DrawingUtils(ctx);
     ctx.clearRect(0, 0, width, height);
-    drawingUtils.drawConnectors(landmarks, GestureRecognizer.HAND_CONNECTIONS, {
+    drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, {
       color: "#00FF00",
       lineWidth: 2,
     });
@@ -173,7 +194,7 @@ export default function App() {
     frequency: number,
     gain: number
   ) => {
-    console.log("Frequency:", frequency, "Gain:", gain * 100);
+    // console.log("Frequency:", frequency, "Gain:", gain * 100);
     // create the context and oscillator
     const context = new AudioContext();
     const oscillator = context.createOscillator();
@@ -214,7 +235,7 @@ export default function App() {
           width={canvasSize[0] || WIDTH}
           height={canvasSize[1] || HEIGHT}
         />
-        {recognizer && (
+        {landmarker && (
           <Button
             className="fixed top-2 left-2 z-10"
             onPress={() => {
@@ -222,6 +243,21 @@ export default function App() {
             }}
           >
             Detect
+          </Button>
+        )}
+        {isVisibleAlert ? (
+          <Alert
+            color="warning"
+            description={alert.description}
+            isVisible={isVisibleAlert}
+            title={alert.title}
+            variant="faded"
+            className={"fixed top-2 left-32 w-auto h-auto"}
+            onClose={() => setIsVisibleAlert(false)}
+          />
+        ) : (
+          <Button variant="bordered" className={"fixed top-2 left-32"} onPress={() => setIsVisibleAlert(true)}>
+            Show Alert
           </Button>
         )}
         <Button
