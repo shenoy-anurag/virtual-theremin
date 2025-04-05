@@ -127,6 +127,7 @@ export default function App() {
           if (isConnected) {
             const frequency = calcFrequency(landmarks);
             const gain = calcGain(landmarks);
+            // console.log(frequency, gain);
             makeSound(frequency, gain);
           }
           drawHandLandmarks(
@@ -167,11 +168,12 @@ export default function App() {
   ) => {
     const thumbTip = landmarks[INDEX_THUMB_TIP];
     const indexFingerTip = landmarks[INDEX_INDEX_FINGER_TIP];
+    // console.log(thumbTip.x, thumbTip.y);
 
     const dx = (thumbTip.x - indexFingerTip.x) * width;
     const dy = (thumbTip.y - indexFingerTip.y) * height;
 
-    const connected = dx < 50 && dy < 50;
+    const connected = dx < 100 && dy < 100;
     return connected;
   };
 
@@ -181,7 +183,7 @@ export default function App() {
     const minFrequency = 10;
     const maxFrequency = 2500;
     const thumbTip = landmarks[INDEX_THUMB_TIP];
-    return ((thumbTip.x) * maxFrequency) + minFrequency;
+    return (thumbTip.x * (maxFrequency -minFrequency)) + minFrequency;
   };
 
   const calcGain = (
@@ -190,7 +192,7 @@ export default function App() {
     const minGain = 0;
     const maxGain = 1;
     const thumbTip = landmarks[INDEX_THUMB_TIP];
-    return 1 - ((thumbTip.y) * maxGain) + minGain;
+    return ((1 - thumbTip.y) * (maxGain - minGain)) + minGain;
   };
 
   const makeSound = (
@@ -199,19 +201,21 @@ export default function App() {
   ) => {
     // console.log("Frequency:", frequency, "Gain:", gain * 100);
     // create the context and oscillator
-    const context = new AudioContext();
-    const oscillator = context.createOscillator();
-    oscillator.connect(context.destination);
-    // create gain node and connect to the destination (audio output device / speakers)
-    const gainNode = context.createGain();
-    oscillator.connect(gainNode);
-    gainNode.connect(context.destination);
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
 
-    oscillator.frequency.value = frequency;
-    gainNode.gain.setTargetAtTime(gain, context.currentTime, 0.01);
+    oscillator.type = 'sine';
+    oscillator.connect(audioCtx.destination);
+    // create gain node and connect to the destination (audio output device / speakers)
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(gain, audioCtx.currentTime);
     // create the sound
-    oscillator.start(context.currentTime);
-    oscillator.stop(context.currentTime + 0.01);
+    oscillator.start(audioCtx.currentTime);
+    oscillator.stop(audioCtx.currentTime + 0.01);
     // oscillator.disconnect();
   };
 
