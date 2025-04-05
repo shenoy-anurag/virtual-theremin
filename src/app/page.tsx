@@ -4,17 +4,28 @@ import { useEffect, useRef, useState } from "react";
 
 import Webcam from "react-webcam";
 
+import Link from "next/link";
+import { Button } from "@/components/ui/button"
 import {
-  HeroUIProvider,
-  useDisclosure,
-  Button,
-  Link,
-  Alert,
-  Modal,
-  ModalHeader,
-  ModalBody,
-  ModalContent
-} from "@heroui/react";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { TriangleAlert } from "lucide-react";
 
 import {
   FilesetResolver,
@@ -32,9 +43,6 @@ const INDEX_INDEX_FINGER_TIP = 8;
 
 
 export default function App() {
-  const modalAbout = useDisclosure();
-  const modalInstructions = useDisclosure();
-
   const webcamRef = useRef<Webcam>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -44,11 +52,6 @@ export default function App() {
   const [canvasSize, setCanvasSize] = useState([0, 0]);
   const [isVisibleAlert, setIsVisibleAlert] = useState(true);
   // const [oscillator, setOscillator] = useState<>(null);
-
-  const alert = {
-    description: "This app works best in Firefox. Performs poorly in Google Chrome and Edge. Currently working on it.",
-    title: "Works best in Firefox",
-  };
 
   async function loadRecognizer() {
     const vision = await FilesetResolver.forVisionTasks(
@@ -75,8 +78,9 @@ export default function App() {
             "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
           delegate: "GPU",
         },
-        numHands: 2,
+        numHands: 1,
         runningMode: "VIDEO",
+        // runningMode: "LIVE_STREAM",
       }
     );
     setCanvasSize([WIDTH, HEIGHT]);
@@ -218,102 +222,112 @@ export default function App() {
   }, []);
 
   return (
-    <HeroUIProvider>
-      <div className="flex flex-col items-center min-h-screen p-8 w-full justify-center bg-gradient-to-tr from-black to-[#10182f]">
-        <Webcam
-          audio={false}
-          width={WIDTH}
-          height={HEIGHT}
-          ref={webcamRef}
-          screenshotFormat="image/jpeg"
-          className="absolute z-10"
-          videoConstraints={{ width: WIDTH, height: HEIGHT, facingMode: 'user' }}
-        />
-        <canvas
-          ref={canvasRef}
-          className="absolute z-10"
-          width={canvasSize[0] || WIDTH}
-          height={canvasSize[1] || HEIGHT}
-        />
-        {landmarker && (
-          <Button
-            className="fixed top-2 left-2 z-10"
-            onPress={() => {
-              renderLoop();
-            }}
-          >
-            Detect
-          </Button>
-        )}
-        {isVisibleAlert ? (
-          <Alert
-            color="warning"
-            description={alert.description}
-            isVisible={isVisibleAlert}
-            title={alert.title}
-            variant="faded"
-            className={"fixed top-2 left-32 w-auto h-auto"}
-            onClose={() => setIsVisibleAlert(false)}
-          />
-        ) : (
-          <Button variant="bordered" className={"fixed top-2 left-32"} onPress={() => setIsVisibleAlert(true)}>
+    <div className="flex flex-col items-center min-h-screen p-8 w-full justify-center bg-linear-to-tr from-black to-[#10182f]">
+      <Webcam
+        audio={false}
+        width={WIDTH}
+        height={HEIGHT}
+        ref={webcamRef}
+        screenshotFormat="image/jpeg"
+        className="absolute z-10"
+        videoConstraints={{ width: WIDTH, height: HEIGHT, facingMode: 'user' }}
+      />
+      <canvas
+        ref={canvasRef}
+        className="absolute z-10"
+        width={canvasSize[0] || WIDTH}
+        height={canvasSize[1] || HEIGHT}
+      />
+      {landmarker && (
+        <Button
+          className="fixed top-2 left-2 z-10"
+          onClick={() => {
+            renderLoop();
+          }}
+        >
+          Detect
+        </Button>
+      )}
+      <AlertDialog open={isVisibleAlert} onOpenChange={setIsVisibleAlert}>
+        <AlertDialogTrigger asChild>
+          <Button variant="secondary" className={"fixed top-2 left-32"}>
             Show Alert
           </Button>
-        )}
-        <Button
-          onPress={modalAbout.onOpen}
-          className={"fixed top-2 right-2 z-50"}
-          color="primary"
-          variant="shadow"
-        >
-          About
-        </Button>
-        <Modal isOpen={modalAbout.isOpen} onOpenChange={modalAbout.onOpenChange}>
-          <ModalContent className={"bg-[#100a43]"}>
-            <ModalHeader className="flex flex-col gap-1">About</ModalHeader>
-            <ModalBody>
-              <h1>Virtual Theremin</h1>
-              <p>
-                A Virtual Theremin app powered by Google&apos;s mediapipe AI hand detection model.
-              </p>
-              <p>
-                For more, check out my personal website:
-                <Link href="https://www.anuragshenoy.in/">
-                  https://www.anuragshenoy.in/
-                </Link>
-              </p>
-              <br></br>
-            </ModalBody>
-          </ModalContent>
-        </Modal>
-        <Button
-          onPress={modalInstructions.onOpen}
-          className={"fixed top-2 z-50 bg-white"}
-          variant="shadow"
-        >
-          Instructions
-        </Button>
-        <Modal isOpen={modalInstructions.isOpen} size={"lg"} onOpenChange={modalInstructions.onOpenChange}>
-          <ModalContent className={"bg-[#100a43]"}>
-            <ModalHeader className="flex flex-col gap-1">Instructions</ModalHeader>
-            <ModalBody>
-              <p>
-                To start detection of hands, click on &quot;Detect&quot;.
-              </p>
-              <p>
-                Pinching your Index Finger and Thumb together activates the Theremin.
-              </p>
-              <p>
-                Frequency varies from LOW to HIGH pitch from LEFT to RIGHT.
-              </p>
-              <p>
-                Gain / Volume varies from LOW to HIGH from BOTTOM to TOP.
-              </p>
-              <br></br>
-            </ModalBody>
-          </ModalContent>
-        </Modal>
-      </div>
-    </HeroUIProvider>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <TriangleAlert className="h-6 w-6 text-yellow-500" />
+            <AlertDialogTitle>Works best in Firefox</AlertDialogTitle>
+            <AlertDialogDescription>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <p>This app works best in Firefox. Performs poorly in Google Chrome and Edge. Currently working on it.</p>
+          <p>Click on Instructions to begin.</p>
+          <AlertDialogFooter>
+            <AlertDialogAction>Okay</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <Dialog>
+        <DialogTrigger asChild>
+          <Button
+            className={"fixed top-2 right-2 z-50"}
+            color="primary"
+            variant="secondary"
+          >
+            About
+          </Button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>About</DialogTitle>
+          </DialogHeader>
+          <h1>Virtual Theremin</h1>
+          <p>
+            A Virtual Theremin app powered by Google&apos;s mediapipe AI hand detection model.
+          </p>
+          <p>
+            For more, check out my personal website:&nbsp;
+            <Link href="https://www.anuragshenoy.in/">
+              https://www.anuragshenoy.in/
+            </Link>
+          </p>
+          <br></br>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog>
+        <DialogTrigger asChild>
+          <Button
+            className={"fixed top-2 z-50"}
+            variant="default"
+          >
+            Instructions
+          </Button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Instructions</DialogTitle>
+            <DialogDescription>
+              How to use this app
+            </DialogDescription>
+          </DialogHeader>
+          <p>
+            To start detection of hands, click on &quot;Detect&quot;.
+          </p>
+          <p>
+            Pinching your Index Finger and Thumb together activates the Theremin.
+          </p>
+          <p>
+            Frequency varies from LOW to HIGH pitch from LEFT to RIGHT.
+          </p>
+          <p>
+            Gain / Volume varies from LOW to HIGH from BOTTOM to TOP.
+          </p>
+          <br></br>
+        </DialogContent>
+      </Dialog>
+
+    </div>
   );
 }
