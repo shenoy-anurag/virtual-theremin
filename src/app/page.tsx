@@ -201,7 +201,7 @@ export default function App() {
   ) => {
     // console.log("Frequency:", frequency, "Gain:", gain * 100);
     // create the context and oscillator
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const audioCtx = new AudioContext();
     const oscillator = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
 
