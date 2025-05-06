@@ -56,19 +56,6 @@ export default function App() {
     const vision = await FilesetResolver.forVisionTasks(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
     );
-
-    // const gestureRecognizer = await GestureRecognizer.createFromOptions(
-    //   vision,
-    //   {
-    //     baseOptions: {
-    //       modelAssetPath:
-    //         "https://storage.googleapis.com/mediapipe-tasks/gesture_recognizer/gesture_recognizer.task",
-    //       delegate: "GPU",
-    //     },
-    //     numHands: 1,
-    //     runningMode: "VIDEO",
-    //   }
-    // );
     const handLandmarker = await HandLandmarker.createFromOptions(
       vision,
       {
@@ -86,7 +73,7 @@ export default function App() {
     setLandmarker(handLandmarker);
   }
 
-  function renderLoop() {
+  async function renderLoop() {
     if (
       !landmarker ||
       !webcamRef.current ||
@@ -111,10 +98,6 @@ export default function App() {
     canvasEl.height = HEIGHT;
 
     // Get prediction results from the MediaPipe hand for the current video frame.
-    // const result = landmarker.recognizeForVideo(
-    //   webcamRef.current.video,
-    //   Date.now()
-    // );
     const result = landmarker.detectForVideo(webcamRef.current.video, Date.now())
     if (result.landmarks) {
       const width = canvasEl.width;
