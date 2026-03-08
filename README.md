@@ -1,6 +1,15 @@
 # Virtual Theremin
 My new app to detect hand gestures and create music from those gestures.
 
+## Idea
+The project is about retrieving a live feed from your webcam / front camera, then using google's mediapipe to detect hands. 
+
+When the thumb and index of the right hand are pinched together, the theremin produces sound based on the x and y pixel coordinates of your thumb and index finger with respect to the screen's resolution.
+
+Higher pitches are towards the right edge of the screen, and lower pitches are towards the left edge.
+
+With your left hand, you can control the loudness of the sound. Increase the volume by raising your left hand, and lower it by lowering the left hand.
+
 ## Getting Started
 
 First, run the development server:

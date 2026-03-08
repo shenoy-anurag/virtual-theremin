@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 import Webcam from "react-webcam";
 
@@ -24,7 +24,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { TriangleAlert } from "lucide-react";
+import { TriangleAlert, Volume2, Music, Info, Play } from "lucide-react";
 
 import {
   FilesetResolver,
@@ -37,283 +37,367 @@ const WIDTH = 1280;
 const HEIGHT = 720;
 const INDEX_THUMB_TIP = 4;
 const INDEX_INDEX_FINGER_TIP = 8;
+const LEFT_THUMB_TIP = 4;
+const LEFT_INDEX_FINGER_TIP = 8;
 
-// const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
+interface AudioState {
+  ctx: AudioContext | null;
+  oscillator: OscillatorNode | null;
+  gainNode: GainNode | null;
+  isPlaying: boolean;
+}
 
 export default function App() {
   const webcamRef = useRef<Webcam>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animationRef = useRef<number>(0);
+  const lastVideoTime = useRef<number>(-1);
 
-  // Recognize variable from the mediapipe task-vision library
-  // const [recognizer, setRecognizer] = useState<GestureRecognizer>();
-  const [landmarker, setLandmarker] = useState<HandLandmarker>();
-  const [canvasSize, setCanvasSize] = useState([0, 0]);
-  const [isVisibleAlert, setIsVisibleAlert] = useState(true);
-  // const [oscillator, setOscillator] = useState<>(null);
+  const [landmarker, setLandmarker] = useState<HandLandmarker | null>(null);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [isModelLoading, setIsModelLoading] = useState(true);
+  const [isPinchActive, setIsPinchActive] = useState(false);
+  const [currentFrequency, setCurrentFrequency] = useState(0);
+  const [currentGain, setCurrentGain] = useState(0);
+  const [audioState, setAudioState] = useState<AudioState>({
+    ctx: null,
+    oscillator: null,
+    gainNode: null,
+    isPlaying: false,
+  });
+  const [showAlert, setShowAlert] = useState(true);
 
-  async function loadRecognizer() {
-    const vision = await FilesetResolver.forVisionTasks(
-      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-    );
-    const handLandmarker = await HandLandmarker.createFromOptions(
-      vision,
-      {
-        baseOptions: {
-          modelAssetPath:
-            "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-          delegate: "GPU",
-        },
-        numHands: 1,
-        runningMode: "VIDEO",
-        // runningMode: "LIVE_STREAM",
-      }
-    );
-    setCanvasSize([WIDTH, HEIGHT]);
-    setLandmarker(handLandmarker);
+  const initAudio = useCallback(() => {
+    const ctx = new AudioContext();
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(440, ctx.currentTime);
+    gainNode.gain.setValueAtTime(0, ctx.currentTime);
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    oscillator.start();
+
+    setAudioState({ ctx, oscillator, gainNode, isPlaying: false });
+  }, []);
+
+  const stopSound = useCallback(() => {
+    if (audioState.gainNode && audioState.ctx) {
+      audioState.gainNode.gain.setTargetAtTime(0, audioState.ctx.currentTime, 0.05);
+    }
+    setAudioState(prev => ({ ...prev, isPlaying: false }));
+  }, [audioState.gainNode, audioState.ctx]);
+
+  const playSound = useCallback((frequency: number, gain: number) => {
+    if (!audioState.ctx || !audioState.oscillator || !audioState.gainNode) return;
+    
+    if (audioState.ctx.state === 'suspended') {
+      audioState.ctx.resume();
+    }
+
+    audioState.oscillator.frequency.setTargetAtTime(frequency, audioState.ctx.currentTime, 0.01);
+    audioState.gainNode.gain.setTargetAtTime(gain, audioState.ctx.currentTime, 0.05);
+    
+    setAudioState(prev => ({ ...prev, isPlaying: true }));
+  }, [audioState]);
+
+  async function loadModel() {
+    try {
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+      );
+      
+      const handLandmarker = await HandLandmarker.createFromOptions(
+        vision,
+        {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+            delegate: "CPU",
+          },
+          numHands: 2,
+          runningMode: "VIDEO",
+        }
+      );
+      
+      setLandmarker(handLandmarker);
+      setIsModelLoading(false);
+    } catch (error) {
+      console.error("Failed to load MediaPipe model:", error);
+    }
   }
-
-  async function renderLoop() {
-    if (
-      !landmarker ||
-      !webcamRef.current ||
-      !webcamRef.current.video ||
-      !webcamRef.current ||
-      !canvasRef.current
-    ) {
-      return;
-    }
-
-    webcamRef.current.video.width = WIDTH;
-    webcamRef.current.video.height = HEIGHT;
-
-    const canvasEl = canvasRef.current;
-    const ctx = canvasEl.getContext("2d");
-    if (!ctx) return;
-
-    ctx.save();
-    ctx.clearRect(0, 0, WIDTH, HEIGHT);
-
-    canvasEl.width = WIDTH;
-    canvasEl.height = HEIGHT;
-
-    // Get prediction results from the MediaPipe hand for the current video frame.
-    const result = landmarker.detectForVideo(webcamRef.current.video, Date.now())
-    if (result.landmarks) {
-      const width = canvasEl.width;
-      const height = canvasEl.height;
-      if (result.landmarks.length === 0) {
-        ctx.clearRect(0, 0, width, height);
-      } else {
-        result.landmarks.forEach((landmarks) => {
-          const isConnected = detectPinch(landmarks, WIDTH, HEIGHT);
-          if (isConnected) {
-            const frequency = calcFrequency(landmarks);
-            const gain = calcGain(landmarks);
-            // console.log(frequency, gain);
-            makeSound(frequency, gain);
-          }
-          drawHandLandmarks(
-            landmarks,
-            ctx,
-            width,
-            height
-          );
-        });
-      }
-    }
-    // continuously call the renderLoop function to update the mediapipe predictions in real-time.
-    requestAnimationFrame(renderLoop);
-  };
-
-  const drawHandLandmarks = (
-    landmarks: NormalizedLandmark[],
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number,
-  ) => {
-    const drawingUtils = new DrawingUtils(ctx);
-    ctx.clearRect(0, 0, width, height);
-    drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, {
-      color: "#00FF00",
-      lineWidth: 2,
-    });
-    drawingUtils.drawLandmarks(landmarks, {
-      color: "#FF0000",
-      lineWidth: 1,
-    });
-  };
 
   const detectPinch = (
     landmarks: NormalizedLandmark[],
     width: number,
     height: number,
+    isLeftHand: boolean = false
   ) => {
-    const thumbTip = landmarks[INDEX_THUMB_TIP];
-    const indexFingerTip = landmarks[INDEX_INDEX_FINGER_TIP];
-    // console.log(thumbTip.x, thumbTip.y);
+    const thumbTip = landmarks[isLeftHand ? LEFT_THUMB_TIP : INDEX_THUMB_TIP];
+    const indexFingerTip = landmarks[isLeftHand ? LEFT_INDEX_FINGER_TIP : INDEX_INDEX_FINGER_TIP];
 
     const dx = (thumbTip.x - indexFingerTip.x) * width;
     const dy = (thumbTip.y - indexFingerTip.y) * height;
 
-    const connected = dx < 100 && dy < 100;
-    return connected;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    return distance < 80;
   };
 
-  const calcFrequency = (
-    landmarks: NormalizedLandmark[]
-  ) => {
-    const minFrequency = 10;
-    const maxFrequency = 2500;
+  const calcFrequency = (landmarks: NormalizedLandmark[]) => {
+    const minFrequency = 80;
+    const maxFrequency = 1200;
     const thumbTip = landmarks[INDEX_THUMB_TIP];
-    return (thumbTip.x * (maxFrequency -minFrequency)) + minFrequency;
+    return (thumbTip.x * (maxFrequency - minFrequency)) + minFrequency;
   };
 
-  const calcGain = (
-    landmarks: NormalizedLandmark[]
-  ) => {
+  const calcGain = (landmarks: NormalizedLandmark[], leftHandLandmarks?: NormalizedLandmark[]) => {
+    if (leftHandLandmarks && leftHandLandmarks.length > 0) {
+      const leftThumbTip = leftHandLandmarks[LEFT_THUMB_TIP];
+      const minGain = 0;
+      const maxGain = 0.5;
+      return ((1 - leftThumbTip.y) * (maxGain - minGain)) + minGain;
+    }
+    
     const minGain = 0;
-    const maxGain = 1;
+    const maxGain = 0.3;
     const thumbTip = landmarks[INDEX_THUMB_TIP];
     return ((1 - thumbTip.y) * (maxGain - minGain)) + minGain;
   };
 
-  const makeSound = (
-    frequency: number,
-    gain: number
-  ) => {
-    // console.log("Frequency:", frequency, "Gain:", gain * 100);
-    // create the context and oscillator
-    const audioCtx = new AudioContext();
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
+  const renderLoop = useCallback(() => {
+    if (!landmarker || !webcamRef.current || !webcamRef.current.video || !canvasRef.current) {
+      animationRef.current = requestAnimationFrame(renderLoop);
+      return;
+    }
 
-    oscillator.type = 'sine';
-    oscillator.connect(audioCtx.destination);
-    // create gain node and connect to the destination (audio output device / speakers)
-    oscillator.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
+    const video = webcamRef.current.video;
+    
+    if (video.readyState !== 4) {
+      animationRef.current = requestAnimationFrame(renderLoop);
+      return;
+    }
 
-    oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
-    gainNode.gain.setValueAtTime(gain, audioCtx.currentTime);
-    // create the sound
-    oscillator.start(audioCtx.currentTime);
-    oscillator.stop(audioCtx.currentTime + 0.01);
-    // oscillator.disconnect();
-  };
+    if (lastVideoTime.current === video.currentTime) {
+      animationRef.current = requestAnimationFrame(renderLoop);
+      return;
+    }
+    
+    lastVideoTime.current = video.currentTime;
 
-  // Make the recognizer loaded, when first time users open the website
+    const canvasEl = canvasRef.current;
+    const ctx = canvasEl.getContext("2d");
+    if (!ctx) return;
+
+    canvasEl.width = WIDTH;
+    canvasEl.height = HEIGHT;
+
+    ctx.save();
+    ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+    const result = landmarker.detectForVideo(video, Date.now());
+    
+    let rightHandPinch = false;
+    let rightHandLandmarks: NormalizedLandmark[] = [];
+    let leftHandLandmarks: NormalizedLandmark[] = [];
+
+    if (result.landmarks && result.landmarks.length > 0) {
+      const drawingUtils = new DrawingUtils(ctx);
+      
+      result.landmarks.forEach((landmarks, index) => {
+        const isLeftHand = index === 1 || (result.landmarks && result.landmarks.length === 1 && landmarks[4].x < 0.5);
+        
+        if (!isLeftHand && rightHandLandmarks.length === 0) {
+          rightHandLandmarks = landmarks;
+          rightHandPinch = detectPinch(landmarks, WIDTH, HEIGHT, false);
+          
+          if (rightHandPinch) {
+            const frequency = calcFrequency(landmarks);
+            const gain = calcGain(landmarks, leftHandLandmarks.length > 0 ? leftHandLandmarks : undefined);
+            setCurrentFrequency(Math.round(frequency));
+            setCurrentGain(Math.round(gain * 100));
+            playSound(frequency, gain);
+          }
+        } else if (isLeftHand && leftHandLandmarks.length === 0) {
+          leftHandLandmarks = landmarks;
+        }
+        
+        if (rightHandPinch && leftHandLandmarks.length > 0) {
+          const gain = calcGain(rightHandLandmarks, leftHandLandmarks);
+          setCurrentGain(Math.round(gain * 100));
+          playSound(currentFrequency, gain);
+        }
+
+        const color = isLeftHand ? "#00BFFF" : "#00FF00";
+        drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, {
+          color: color,
+          lineWidth: 2,
+        });
+        drawingUtils.drawLandmarks(landmarks, {
+          color: isLeftHand ? "#FF69B4" : "#FF0000",
+          lineWidth: 1,
+          radius: 3,
+        });
+      });
+    }
+
+    if (!rightHandPinch && audioState.isPlaying) {
+      stopSound();
+    }
+
+    setIsPinchActive(rightHandPinch);
+
+    animationRef.current = requestAnimationFrame(renderLoop);
+  }, [landmarker, audioState, playSound, stopSound, currentFrequency]);
+
+  const startDetection = useCallback(() => {
+    if (!isDetecting && landmarker) {
+      setIsDetecting(true);
+      initAudio();
+      renderLoop();
+    }
+  }, [isDetecting, landmarker, initAudio, renderLoop]);
+
   useEffect(() => {
-    loadRecognizer();
+    loadModel();
+    
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+      if (audioState.ctx) {
+        audioState.ctx.close();
+      }
+    };
   }, []);
 
+  useEffect(() => {
+    if (isDetecting) {
+      animationRef.current = requestAnimationFrame(renderLoop);
+    }
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [isDetecting, renderLoop]);
+
   return (
-    <div className="flex flex-col items-center min-h-screen p-8 w-full justify-center bg-linear-to-tr from-black to-[#10182f]">
-      <Webcam
-        audio={false}
-        width={WIDTH}
-        height={HEIGHT}
-        ref={webcamRef}
-        screenshotFormat="image/jpeg"
-        className="absolute z-10"
-        videoConstraints={{ width: WIDTH, height: HEIGHT, facingMode: 'user' }}
-      />
-      <canvas
-        ref={canvasRef}
-        className="absolute z-10"
-        width={canvasSize[0] || WIDTH}
-        height={canvasSize[1] || HEIGHT}
-      />
-      {landmarker && (
-        <Button
-          className="fixed top-2 left-2 z-10"
-          onClick={() => {
-            renderLoop();
-          }}
-        >
-          Detect
-        </Button>
-      )}
-      <AlertDialog open={isVisibleAlert} onOpenChange={setIsVisibleAlert}>
-        <AlertDialogTrigger asChild>
-          <Button variant="secondary" className={"fixed top-2 left-32"}>
-            Show Alert
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <TriangleAlert className="h-6 w-6 text-yellow-500" />
-            <AlertDialogTitle>Works best in Firefox</AlertDialogTitle>
-            <AlertDialogDescription>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <p>This app works best in Firefox. Performs poorly in Google Chrome and Edge. Currently working on it.</p>
-          <p>Click on Instructions to begin.</p>
-          <AlertDialogFooter>
-            <AlertDialogAction>Okay</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <Dialog>
-        <DialogTrigger asChild>
-          <Button
-            className={"fixed top-2 right-2 z-50"}
-            color="primary"
-            variant="secondary"
-          >
-            About
-          </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>About</DialogTitle>
-          </DialogHeader>
-          <h1>Virtual Theremin</h1>
-          <p>
-            A Virtual Theremin app powered by Google&apos;s mediapipe AI hand detection model.
-          </p>
-          <p>
-            For more, check out my personal website:&nbsp;
-            <Link href="https://www.anuragshenoy.in/">
-              https://www.anuragshenoy.in/
-            </Link>
-          </p>
-          <br></br>
-        </DialogContent>
-      </Dialog>
+    <div className="flex flex-col items-center justify-center min-h-screen w-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+        <Webcam
+          audio={false}
+          width={WIDTH}
+          height={HEIGHT}
+          ref={webcamRef}
+          screenshotFormat="image/jpeg"
+          className="rounded-2xl"
+          videoConstraints={{ width: WIDTH, height: HEIGHT, facingMode: 'user' }}
+        />
+        
+        <canvas
+          ref={canvasRef}
+          className="absolute top-0 left-0 rounded-2xl"
+          style={{ width: WIDTH, height: HEIGHT }}
+        />
+        
+        {isPinchActive && (
+          <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full">
+            <Music className="w-4 h-4 text-green-400 animate-pulse" />
+            <span className="text-green-400 font-mono text-sm">
+              {currentFrequency}Hz
+            </span>
+          </div>
+        )}
+        
+        {isPinchActive && (
+          <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full">
+            <Volume2 className="w-4 h-4 text-blue-400" />
+            <span className="text-blue-400 font-mono text-sm">
+              {currentGain}%
+            </span>
+          </div>
+        )}
+        
+        {!isDetecting && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <Button
+              onClick={startDetection}
+              disabled={isModelLoading}
+              size="lg"
+              className="gap-2 bg-green-600 hover:bg-green-700 text-white px-8 py-6 text-lg rounded-full"
+            >
+              <Play className="w-5 h-5" />
+              {isModelLoading ? 'Loading Model...' : 'Start Theremin'}
+            </Button>
+          </div>
+        )}
+      </div>
 
-      <Dialog>
-        <DialogTrigger asChild>
-          <Button
-            className={"fixed top-2 z-50"}
-            variant="default"
-          >
-            Instructions
-          </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Instructions</DialogTitle>
-            <DialogDescription>
-              How to use this app
-            </DialogDescription>
-          </DialogHeader>
-          <p>
-            To start detection of hands, click on &quot;Detect&quot;.
-          </p>
-          <p>
-            Pinching your Index Finger and Thumb together activates the Theremin.
-          </p>
-          <p>
-            Frequency varies from LOW to HIGH pitch from LEFT to RIGHT.
-          </p>
-          <p>
-            Gain / Volume varies from LOW to HIGH from BOTTOM to TOP.
-          </p>
-          <br></br>
-        </DialogContent>
-      </Dialog>
+      <div className="fixed top-4 left-4 z-50 flex gap-2">
+        <AlertDialog open={showAlert} onOpenChange={setShowAlert}>
+          <AlertDialogTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-2 bg-slate-800/80 border-slate-700 text-slate-200 hover:bg-slate-700">
+              <TriangleAlert className="w-4 h-4 text-yellow-500" />
+              Status
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent className="bg-slate-900 border-slate-800 text-slate-100">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <TriangleAlert className="w-5 h-5 text-yellow-500" />
+                Performance Note
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-slate-400">
+                This app now uses CPU-based processing for better cross-browser compatibility.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <p className="text-slate-300">
+              Use your <span className="text-green-400">right hand</span> to control pitch and volume.
+              Pinch thumb and index finger together to activate sound.
+            </p>
+            <AlertDialogFooter>
+              <AlertDialogAction className="bg-green-600 hover:bg-green-700">Got it!</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
 
+      <div className="fixed top-4 right-4 z-50 flex gap-2">
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-2 bg-slate-800/80 border-slate-700 text-slate-200 hover:bg-slate-700">
+              <Info className="w-4 h-4" />
+              About
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="bg-slate-900 border-slate-800 text-slate-100">
+            <DialogHeader>
+              <DialogTitle>Virtual Theremin</DialogTitle>
+              <DialogDescription className="text-slate-400">
+                AI-Powered Musical Instrument
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 text-slate-300">
+              <p>
+                A Virtual Theremin app powered by Google&apos;s MediaPipe hand detection.
+              </p>
+              <div className="bg-slate-800/50 rounded-lg p-4 space-y-2">
+                <h4 className="font-semibold text-green-400">Controls:</h4>
+                <ul className="space-y-1 text-sm">
+                  <li>• <span className="text-green-400">Right Hand</span> - Pinch thumb & index to activate</li>
+                  <li>• <span className="text-green-400">X Position</span> - Controls pitch (left=low, right=high)</li>
+                  <li>• <span className="text-blue-400">Y Position</span> - Controls volume</li>
+                </ul>
+              </div>
+              <p className="text-sm text-slate-400">
+                Built with Next.js, MediaPipe, and Web Audio API.
+              </p>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
     </div>
   );
 }
