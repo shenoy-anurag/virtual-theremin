@@ -149,7 +149,7 @@ export default function App() {
     const minFrequency = 80;
     const maxFrequency = 1200;
     const thumbTip = landmarks[INDEX_THUMB_TIP];
-    return (thumbTip.x * (maxFrequency - minFrequency)) + minFrequency;
+    return ((1 - thumbTip.x) * (maxFrequency - minFrequency)) + minFrequency;
   };
 
   const calcGain = (landmarks: NormalizedLandmark[], leftHandLandmarks?: NormalizedLandmark[]) => {
