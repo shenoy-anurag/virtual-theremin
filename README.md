@@ -12,7 +12,12 @@ With your left hand, you can control the loudness of the sound. Increase the vol
 
 ## Getting Started
 
-First, run the development server:
+Install dependencies:
+```bash
+pnpm install
+```
+
+Then, run the development server:
 
 ```bash
 npm run dev
