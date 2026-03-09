@@ -31,6 +31,7 @@ import {
   HandLandmarker,
   NormalizedLandmark,
   DrawingUtils,
+  Category,
 } from "@mediapipe/tasks-vision";
 
 const WIDTH = 1280;
@@ -132,11 +133,12 @@ export default function App() {
   const detectPinch = (
     landmarks: NormalizedLandmark[],
     width: number,
-    height: number,
-    isLeftHand: boolean = false
+    height: number
   ) => {
-    const thumbTip = landmarks[isLeftHand ? LEFT_THUMB_TIP : INDEX_THUMB_TIP];
-    const indexFingerTip = landmarks[isLeftHand ? LEFT_INDEX_FINGER_TIP : INDEX_INDEX_FINGER_TIP];
+    const thumbTip = landmarks[INDEX_THUMB_TIP];
+    const indexFingerTip = landmarks[INDEX_INDEX_FINGER_TIP];
+    
+    if (!thumbTip || !indexFingerTip) return false;
 
     const dx = (thumbTip.x - indexFingerTip.x) * width;
     const dy = (thumbTip.y - indexFingerTip.y) * height;
@@ -149,12 +151,14 @@ export default function App() {
     const minFrequency = 80;
     const maxFrequency = 1200;
     const thumbTip = landmarks[INDEX_THUMB_TIP];
+    if (!thumbTip) return minFrequency;
     return ((1 - thumbTip.x) * (maxFrequency - minFrequency)) + minFrequency;
   };
 
   const calcGain = (landmarks: NormalizedLandmark[], leftHandLandmarks?: NormalizedLandmark[]) => {
     if (leftHandLandmarks && leftHandLandmarks.length > 0) {
       const leftThumbTip = leftHandLandmarks[LEFT_THUMB_TIP];
+      if (!leftThumbTip) return 0;
       const minGain = 0;
       const maxGain = 0.5;
       return ((1 - leftThumbTip.y) * (maxGain - minGain)) + minGain;
@@ -163,6 +167,7 @@ export default function App() {
     const minGain = 0;
     const maxGain = 0.3;
     const thumbTip = landmarks[INDEX_THUMB_TIP];
+    if (!thumbTip) return 0;
     return ((1 - thumbTip.y) * (maxGain - minGain)) + minGain;
   };
 
@@ -201,34 +206,61 @@ export default function App() {
     let rightHandPinch = false;
     let rightHandLandmarks: NormalizedLandmark[] = [];
     let leftHandLandmarks: NormalizedLandmark[] = [];
+    let isSoundActive = false;
+    let currentVol = 0;
 
     if (result.landmarks && result.landmarks.length > 0) {
       const drawingUtils = new DrawingUtils(ctx);
       
+      const getHandedness = (index: number): string => {
+        const handedness = result.handednesses?.[index] as Category[] | undefined;
+        return handedness?.[0]?.categoryName ?? "Right";
+      };
+      
       result.landmarks.forEach((landmarks, index) => {
-        const isLeftHand = index === 1 || (result.landmarks && result.landmarks.length === 1 && landmarks[4].x < 0.5);
+        const isLeftHand = getHandedness(index) === "Left";
         
-        if (!isLeftHand && rightHandLandmarks.length === 0) {
-          rightHandLandmarks = landmarks;
-          rightHandPinch = detectPinch(landmarks, WIDTH, HEIGHT, false);
-          
-          if (rightHandPinch) {
-            const frequency = calcFrequency(landmarks);
-            const gain = calcGain(landmarks, leftHandLandmarks.length > 0 ? leftHandLandmarks : undefined);
-            setCurrentFrequency(Math.round(frequency));
-            setCurrentGain(Math.round(gain * 100));
-            playSound(frequency, gain);
-          }
-        } else if (isLeftHand && leftHandLandmarks.length === 0) {
+        if (isLeftHand) {
           leftHandLandmarks = landmarks;
+        } else {
+          rightHandLandmarks = landmarks;
+          rightHandPinch = detectPinch(landmarks, WIDTH, HEIGHT);
         }
-        
-        if (rightHandPinch && leftHandLandmarks.length > 0) {
-          const gain = calcGain(rightHandLandmarks, leftHandLandmarks);
-          setCurrentGain(Math.round(gain * 100));
-          playSound(currentFrequency, gain);
-        }
+      });
 
+      const numHands = result.landmarks.length;
+      
+      if (numHands === 1) {
+        const landmarks = result.landmarks[0];
+        const isLeftHand = getHandedness(0) === "Left";
+        const pinch = detectPinch(landmarks, WIDTH, HEIGHT);
+        
+        if (pinch) {
+          const frequency = calcFrequency(landmarks);
+          const gain = calcGain(landmarks);
+          setCurrentFrequency(Math.round(frequency));
+          setCurrentGain(Math.round(gain * 100));
+          playSound(frequency, gain);
+          isSoundActive = true;
+          currentVol = gain;
+        }
+      } else if (numHands === 2) {
+        const rightHandPinchActive = rightHandPinch;
+        
+        if (rightHandPinchActive) {
+          const frequency = calcFrequency(rightHandLandmarks);
+          const volume = calcGain(leftHandLandmarks);
+          setCurrentFrequency(Math.round(frequency));
+          setCurrentGain(Math.round(volume * 100));
+          playSound(frequency, volume);
+          isSoundActive = true;
+          currentVol = volume;
+        }
+      }
+
+      result.landmarks.forEach((landmarks, index) => {
+        const isLeftHand = getHandedness(index) === "Left";
+        
         const color = isLeftHand ? "#00BFFF" : "#00FF00";
         drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, {
           color: color,
@@ -242,11 +274,11 @@ export default function App() {
       });
     }
 
-    if (!rightHandPinch && audioState.isPlaying) {
+    if (!isSoundActive && audioState.isPlaying) {
       stopSound();
     }
 
-    setIsPinchActive(rightHandPinch);
+    setIsPinchActive(isSoundActive);
 
     animationRef.current = requestAnimationFrame(renderLoop);
   }, [landmarker, audioState, playSound, stopSound, currentFrequency]);
@@ -354,8 +386,9 @@ export default function App() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <p className="text-slate-300">
-              Use your <span className="text-green-400">right hand</span> to control pitch and volume.
-              Pinch thumb and index finger together to activate sound.
+              <span className="text-green-400">Single hand</span>: controls pitch (pinch to activate).
+              <br />
+              <span className="text-blue-400">Both hands</span>: left hand = volume, right hand = pitch.
             </p>
             <AlertDialogFooter>
               <AlertDialogAction className="bg-green-600 hover:bg-green-700">Got it!</AlertDialogAction>
@@ -386,9 +419,10 @@ export default function App() {
               <div className="bg-slate-800/50 rounded-lg p-4 space-y-2">
                 <h4 className="font-semibold text-green-400">Controls:</h4>
                 <ul className="space-y-1 text-sm">
-                  <li>• <span className="text-green-400">Right Hand</span> - Pinch thumb & index to activate</li>
-                  <li>• <span className="text-green-400">X Position</span> - Controls pitch (left=low, right=high)</li>
-                  <li>• <span className="text-blue-400">Y Position</span> - Controls volume</li>
+                  <li>• <span className="text-green-400">One hand</span> - Controls pitch (pinch to activate)</li>
+                  <li>• <span className="text-green-400">Two hands</span> - Left: volume, Right: pitch</li>
+                  <li>• <span className="text-green-400">X Position</span> - Pitch (left=low, right=high)</li>
+                  <li>• <span className="text-blue-400">Y Position</span> - Volume</li>
                 </ul>
               </div>
               <p className="text-sm text-slate-400">
